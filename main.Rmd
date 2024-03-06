@@ -1,0 +1,165 @@
+---
+title: "Code Appendix for STAT 517 Winter 2024 Final Project"
+author: "Wenhao Pan"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Helper functions
+
+```{r}
+get.locations <- function(n) {
+  Xs <- runif(n = n)
+  Ys <- runif(n = n)
+  
+  cbind(Xs, Ys)
+}
+
+phi.pc.prior <- function(phi, phi.0, d, alpha) {
+  lam.tilde.1 <- -log(alpha) * phi.0 ^ (d / 2)
+  (d / 2) * lam.tilde.1 * phi ^ (- d / 2 - 1) * exp(-lam.tilde.1 * phi ^ (-d / 2))
+}
+```
+
+
+## Figure for the spatial design
+
+```{r, fig.width=6, fig.height=6}
+set.seed(517)
+
+n = 10 ^ 2
+locations = get.locations(n)
+
+plot(locations[,1], locations[,2], xlab = "X axis", ylab = "Y axis")
+```
+
+## Figure for the prior of the range parameter
+
+```{r, fig.width=10, fig.height=10}
+sigma.T <- 1 # true marginal standard deviation
+phi.T <- 0.1 # true range
+alpha.1 <- 0.05
+phi.discrete = seq(1e-3, 2 * sqrt(2), length.out = 10 ^ 3) 
+
+# rho_0 = 0.025rho_T
+phi.0 <- 0.025 * phi.T
+phi.prior.1 <- phi.pc.prior(phi.discrete, phi.0, 2, alpha.1)
+
+# rho_0 = 0.1rho_T
+phi.0 <- 0.1 * phi.T
+phi.prior.2 <- phi.pc.prior(phi.discrete, phi.0, 2, alpha.1)
+
+# rho_0 = 0.4rho_T
+phi.0 <- 0.4 * phi.T
+phi.prior.3 <- phi.pc.prior(phi.discrete, phi.0, 2, alpha.1)
+
+# rho_0 = 1.6rho_T
+phi.0 <- 1.6 * phi.T
+phi.prior.4 <- phi.pc.prior(phi.discrete, phi.0, 2, alpha.1)
+
+par(mfrow = c(2, 2))
+plot(phi.discrete, phi.prior.1, type = "l", xlab = "range parameter", ylab = "prior density", main = "rho_0 = 0.025rho_T")
+plot(phi.discrete, phi.prior.2, type = "l", xlab = "range parameter", ylab = "prior density", main = "rho_0 = 0.1rho_T")
+plot(phi.discrete, phi.prior.3, type = "l", xlab = "range parameter", ylab = "prior density", main = "rho_0 = 0.4rho_T")
+plot(phi.discrete, phi.prior.4, type = "l", xlab = "range parameter", ylab = "prior density", main = "rho_0 = 1.6rho_T")
+```
+
+## Table for the performance comparison
+
+```{r, message=FALSE}
+library(geoR)
+set.seed(517)
+
+N <- 10 ^ 2
+
+Xs <- locations[, 1]
+Ys <- locations[, 2]
+
+phi.prior.1 = phi.prior.1 / sum(phi.prior.1)
+phi.prior.2 = phi.prior.2 / sum(phi.prior.2)
+phi.prior.3 = phi.prior.3 / sum(phi.prior.3)
+phi.prior.4 = phi.prior.4 / sum(phi.prior.4)
+
+P.control.1 <- prior.control(phi.prior = phi.prior.1, phi.discrete = phi.discrete,
+                           tausq.rel.prior = "fixed", tausq.rel = 0)
+P.control.2 <- prior.control(phi.prior = phi.prior.2, phi.discrete = phi.discrete,
+                           tausq.rel.prior = "fixed", tausq.rel = 0)
+P.control.3 <- prior.control(phi.prior = phi.prior.3, phi.discrete = phi.discrete,
+                           tausq.rel.prior = "fixed", tausq.rel = 0)
+P.control.4 <- prior.control(phi.prior = phi.prior.4, phi.discrete = phi.discrete,
+                           tausq.rel.prior = "fixed", tausq.rel = 0)
+M.control <- model.control()
+O.control <- output.control(messages = FALSE)
+
+phi.mle.est <- numeric(N)
+phi.map.est.1 <- numeric(N)
+phi.map.est.2 <- numeric(N)
+phi.map.est.3 <- numeric(N)
+phi.map.est.4 <- numeric(N)
+
+for (i in seq_len(N)) {
+  grf.data <- grf(n = n, grid = cbind(Xs, Ys), 
+                  cov.pars = c(sigma.T^2, phi.T), messages = FALSE)
+  grf.obs.geo <- as.geodata(cbind(grf.data$coords, grf.data$data))
+
+  mle.model <- likfit(grf.obs.geo, coords=grf.obs.geo$coords, data=grf.obs.geo$data, 
+                      ini.cov.pars = c(sigma.T^2, sample(c(0.5*phi.T,1.5*phi.T), size = 1)), lik.method = "REML", 
+                      fix.nugget = TRUE, messages = FALSE)
+  
+  bayes.model.1 <- krige.bayes(grf.obs.geo, coords=grf.obs.geo$coords, data=grf.obs.geo$data,
+                           model = M.control, prior = P.control.1, output = O.control)
+  bayes.model.2 <- krige.bayes(grf.obs.geo, coords=grf.obs.geo$coords, data=grf.obs.geo$data,
+                           model = M.control, prior = P.control.2, output = O.control)
+  bayes.model.3 <- krige.bayes(grf.obs.geo, coords=grf.obs.geo$coords, data=grf.obs.geo$data,
+                           model = M.control, prior = P.control.3, output = O.control)
+  bayes.model.4 <- krige.bayes(grf.obs.geo, coords=grf.obs.geo$coords, data=grf.obs.geo$data,
+                           model = M.control, prior = P.control.4, output = O.control)
+
+  phi.mle.est[i] <- mle.model$phi
+  phi.map.est.1[i] <- bayes.model.1$posterior$phi$summary[2]
+  phi.map.est.2[i] <- bayes.model.2$posterior$phi$summary[2]
+  phi.map.est.3[i] <- bayes.model.3$posterior$phi$summary[2]
+  phi.map.est.4[i] <- bayes.model.4$posterior$phi$summary[2]
+}
+```
+
+```{r}
+# MLE
+c(quantile(phi.mle.est, 0.025), quantile(phi.mle.est, 0.975)) # 95% confidence interval 
+quantile(phi.mle.est, 0.975) - quantile(phi.mle.est, 0.025) # 95% confidence interval width
+mean((phi.mle.est - phi.T) ^ 2) # mean squared error
+```
+```{r}
+# MAP when rho_0 = 0.025rho_T
+c(quantile(phi.map.est.1, 0.025), quantile(phi.map.est.1, 0.975)) # 95% confidence interval 
+quantile(phi.map.est.1, 0.975) - quantile(phi.map.est.1, 0.025) # 95% confidence interval width
+mean((phi.map.est.1 - phi.T) ^ 2) # mean squared error
+```
+
+```{r}
+# MAP when rho_0 = 0.1rho_T
+c(quantile(phi.map.est.2, 0.025), quantile(phi.map.est.2, 0.975)) # 95% confidence interval 
+quantile(phi.map.est.2, 0.975) - quantile(phi.map.est.2, 0.025) # 95% confidence interval width
+mean((phi.map.est.2 - phi.T) ^ 2) # mean squared error
+```
+
+```{r}
+# MAP when rho_0 = 0.4rho_T
+c(quantile(phi.map.est.3, 0.025), quantile(phi.map.est.3, 0.975)) # 95% confidence interval 
+quantile(phi.map.est.3, 0.975) - quantile(phi.map.est.3, 0.025) # 95% confidence interval width
+mean((phi.map.est.3 - phi.T) ^ 2) # mean squared error
+```
+
+```{r}
+# MAP when rho_0 = 1.6rho_T
+c(quantile(phi.map.est.4, 0.025), quantile(phi.map.est.4, 0.975)) # 95% confidence interval 
+quantile(phi.map.est.4, 0.975) - quantile(phi.map.est.4, 0.025) # 95% confidence interval width
+mean((phi.map.est.4 - phi.T) ^ 2) # mean squared error
+```
+
